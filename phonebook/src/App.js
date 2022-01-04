@@ -1,29 +1,24 @@
 import React, { useState, useEffect } from "react";
-import axios from "axios";
+import {
+  create,
+  getAll,
+  deletePerson,
+  updatePerson,
+} from "./services/communication";
 
 import Persons from "./components/Persons";
 import PersonForm from "./components/PersonForm";
 import Filter from "./components/Filter";
 
 const App = () => {
-  const hook = () => {
-    axios.get("http://localhost:3001/persons").then((response) => {
-      setPersons(response.data);
-    });
-  };
+  const refreshPersonsList = () =>
+    getAll().then((response) => setPersons(response));
+  // error: setPersons(getAll()); promise not resolved!
 
-  useEffect(hook, []);
+  useEffect(refreshPersonsList, []);
 
-  // const sampleData = [
-  //   { name: "Arto Hellas", number: "040-123456", id: 1 },
-  //   { name: "Ada Lovelace", number: "39-44-5323523", id: 2 },
-  //   { name: "Dan Abramov", number: "12-43-234345", id: 3 },
-  //   { name: "Mary Poppendieck", number: "39-23-6423122", id: 4 },
-  //   { name: "Rick", number: "018", id: 5 },
-  // ];
-
-  const [persons, setPersons] = useState([]); 
-  // has to be empty Array due to map() below
+  const [persons, setPersons] = useState([]);
+  // has to be empty Array, not blank, due to map() below
   const [newName, setNewName] = useState("");
   const [newNumber, setNewNumber] = useState("");
   const [searchedName, setSearchedName] = useState("");
@@ -43,31 +38,84 @@ const App = () => {
     console.log("submitted");
     console.log(persons);
     event.preventDefault();
-    const duplicateIndexFunction = (personObject) =>
-      personObject.name === newName;
+    let idToUpdate = null;
+    const duplicateIndexFunction = (personObject) => {
+      if (personObject.name === newName) {
+        idToUpdate = personObject.id;
+        return true;
+      }
+      return false;
+    };
+
     if (persons.findIndex(duplicateIndexFunction) !== -1) {
-      alert(`${newName} has already been added to the phonebook!`);
-    } else {
-      setPersons(
-        persons.concat({
+      const replaceMessage = `
+      ${newName} has already been added to the phonebook! 
+      Replace the old number with the new one?`;
+
+      if (window.confirm(replaceMessage)) {
+        console.log("confirmed, replace id:", idToUpdate);
+        const updatedPerson = {
           name: newName,
           number: newNumber,
-          id: persons.length + 1,
-        })
+          id: idToUpdate,
+        };
+        updatePerson(idToUpdate, updatedPerson).then((response) => {
+          console.log(response);
+          setPersons(
+            persons.map((person) => {
+              if (person.id === idToUpdate) {
+                return updatedPerson;
+              }
+              return person;
+            })
+          );
+        });
+      }
+    } else {
+      const newPerson = {
+        name: newName,
+        number: newNumber,
+        // id: persons.length + 1, // this is bug. let server decide id instead.
+      };
+      // need to retrieve the response from server, to know id server set
+      // server returns object with created person
+      create(newPerson).then((response) =>
+        setPersons(persons.concat(response))
       );
-      console.log(persons);
+      // console.log(persons);
     }
-
     setNewName("");
     setNewNumber("");
   };
 
   const personsToDisplay = () => {
     if (searchedName.length === 0) {
+      console.log(persons, typeof persons);
       return persons;
     } else {
-      return persons.filter((person) => person.name.includes(searchedName));
+      const filteredNames = persons.filter((person) =>
+        person.name.includes(searchedName)
+      );
+      console.log(filteredNames);
+      return filteredNames;
     }
+  };
+
+  const handleDeletePerson = async (id) => {
+    // update database
+    console.log(`App ${id}`);
+    try {
+      let result = await deletePerson(id);
+      console.log(result);
+    } catch (error) {
+      console.log(error);
+      alert(error);
+      refreshPersonsList();
+    }
+
+    //  update local state
+    const updatedPersonsList = persons.filter((person) => person.id !== id);
+    setPersons(updatedPersonsList);
   };
 
   return (
@@ -88,7 +136,12 @@ const App = () => {
       />
 
       <h3>Numbers</h3>
-      <Persons persons={personsToDisplay()} />
+      <Persons
+        persons={personsToDisplay()}
+        handleDeletePerson={handleDeletePerson}
+      />
+      {/* button simulates trying to delete an already deleted person. */}
+      {/* <button onClick={() => handleDeletePerson(100)}>Error test</button> */}
     </div>
   );
 };
